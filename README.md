@@ -2,6 +2,7 @@
 ## Running Profile & Performance Predictor 🏃‍♂️⚡
 
 A lightweight, zero-dependency, single-page web application designed for runners and coaches to model physiological profiles, energy expenditure, heart rate zones, and race performances.
+It can be directly seen here : [Runner Athletic Profile](https://guillaume-cohen-perso.github.io/Runner-Athletic-Profile/)
 
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![HTML5/CSS3/JS](https://img.shields.io/badge/tech-HTML5%20%2F%20CSS3%20%2F%20JS-orange)
