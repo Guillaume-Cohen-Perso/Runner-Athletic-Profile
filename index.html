@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runner Profile: VO2max, MAS, Critical Speed/Power, Zones & Predictions</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+<h1>Runner Athletic Profile</h1>
+<p>VO2max, MAS, Critical Speed & Power (CP/W'), HR, metabolic & mechanical power, energy cost, pace/power zones, and race predictions.</p>
+</header>
+<div class="wrap">
+<aside class="panel">
+<h2>Runner</h2>
+<div class="g2">
+<div><label for="m">Weight (kg)</label><input id="m" type="number" value="71" min="30" max="200" step="0.5"></div>
+<div><label for="age">Age (yrs)</label><input id="age" type="number" value="51" min="10" max="100"></div>
+<div><label for="fr">Rest HR (bpm)</label><input id="fr" type="number" value="52" min="30" max="100"></div>
+<div><label for="fm">Measured Max HR</label><input id="fm" type="number" value="178" placeholder="optional" min="120" max="230"></div>
+</div>
+<h2>Maximal Efforts</h2>
+<div class="perf"><label>Distance (m)</label><label>Time</label><label>Avg HR</label></div>
+<div class="perf"><input value="1520" inputmode="decimal"><input value="6:00"><input value="163"></div>
+<div class="perf"><input value="9670" inputmode="decimal"><input value="44:14"><input value="171"></div>
+<div class="perf"><input inputmode="decimal"><input placeholder="h:mm:ss"><input></div>
+<div class="perf"><input inputmode="decimal"><input placeholder="h:mm:ss"><input></div>
+<p class="hint">2 to 4 maximal efforts of different durations (ideally 5–8 min and a longer effort) fuel the Critical Speed/Power, adjusted Riegel, and Logarithmic models. Format: mm:ss or h:mm:ss. Avg HR is optional.</p>
+<h2>Options</h2>
+<div class="g2">
+<div><label for="d6">Half-Cooper: 6-min distance (m)</label><input id="d6" type="number" step="10" value="1520"></div>
+<div><label for="vt">Speed to analyze (km/h)</label><input id="vt" type="number" step="0.1" placeholder="e.g. 12"></div>
+<div><label for="kr">Riegel k (auto / fixed)</label><input id="kr" type="number" step="0.01" placeholder="e.g. 1.06 (blank = auto)"></div>
+<div><label for="dc">Distance to analyze (km)</label><input id="dc" type="number" step="0.1" placeholder="e.g. 15"></div>
+<div><label for="tc">Log model: tc (min)</label><input id="tc" type="number" step="0.5" value="6" min="3" max="10"></div>
+<div><label for="pente">Slope / Gradient (%)</label><input id="pente" type="number" step="0.5" value="0" min="-30" max="30"></div>
+<div style="grid-column: span 2;">
+ <label for="mvma">MAS Model for Zones</label>
+ <select id="mvma">
+  <option value="daniels">Daniels MAS (VDOT)</option>
+  <option value="leger">Léger MAS (VO2max / 3.5)</option>
+  <option value="cooper" selected>Half-Cooper MAS (d6 / 100)</option>
+ </select>
+</div>
+</div>
+</aside>
+<main id="out"></main>
+</div>
+<footer>Results are theoretical estimations derived from scientific literature models. They do not replace laboratory physiological testing or medical advice.</footer>
+<script>
+const $=i=>document.getElementById(i),f=(x,n=0)=>isFinite(x)?x.toFixed(n):'–';
+const pt=s=>{s=(s||'').trim().replace(',','.');return s?s.split(':').reduce((a,p)=>a*60+parseFloat(p),0):NaN};
+const ft=s=>{s=Math.round(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),c=s%60;return h?`${h}h${String(m).padStart(2,'0')}'${String(c).padStart(2,'0')}"`:`${m}'${String(c).padStart(2,'0')}"`};
+const al=v=>{if(!(v>0))return'–';const s=Math.round(3600/v);return`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`};
+
+const costMinetti=G=>{
+ const g2=G*G,g3=g2*G,g4=g3*G,g5=g4*G;
+ return 155.4*g5 - 30.4*g4 - 43.3*g3 + 46.3*g2 + 19.5*G + 3.6;
+};
+
+const vo2=v=>{const u=v*1000/60;return-4.6+.182258*u+.000104*u*u};
+const vInv=o=>{const u=(-.182258+Math.sqrt(.182258**2+4*.000104*(4.6+o)))/(2*.000104);return u*.06};
+const Ft=t=>.8+.1894393*Math.exp(-.012778*t)+.2989558*Math.exp(-.1932605*t);
+const vdot=(d,t)=>{const m=t/60,u=d/m;return(-4.6+.182258*u+.000104*u*u)/Ft(m)};
+const tV=(d,V)=>{let a=30,b=2e5;for(let i=0;i<60;i++){const c=(a+b)/2;vdot(d,c)>V?a=c:b=c}return(a+b)/2};
+const reg=(x,y)=>{const n=x.length,mx=x.reduce((a,b)=>a+b)/n,my=y.reduce((a,b)=>a+b)/n;let sxx=0,sxy=0,st=0,sr=0;x.forEach((a,i)=>{sxx+=(a-mx)**2;sxy+=(a-mx)*(y[i]-my)});if(!sxx)return null;const s=sxy/sxx,o=my-s*mx;x.forEach((a,i)=>{st+=(y[i]-my)**2;sr+=(y[i]-o-s*a)**2});return[s,o,st?1-sr/st:1]};
+const tb=(h,r)=>`<div class="tw"><table><thead><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${r.map(x=>`<tr${x.z?` style="--z:${x.z}"`:''}>${x.v.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+const ZC=['#7aa2c7','#4aa389','#c9a227','#e07b39','#c8433f'];
+const lgT=(L,d)=>{let lo=10,hi=Math.exp(-L.a/L.b-1);if((L.a+L.b*Math.log(hi))*hi<d)return NaN;for(let i=0;i<80;i++){const c=(lo+hi)/2;(L.a+L.b*Math.log(c))*c<d?lo=c:hi=c}return(lo+hi)/2};
+
+let ri=null,G=null,sd=10000,sf=null,sm=0,dragK=null;
+
+function calc(){
+ const m=+$('m').value,age=+$('age').value,fr=+$('fr').value||0,fm=+$('fm').value||0,out=$('out');
+ const penteVal=(+$('pente').value||0)/100;
+ const P=[...document.querySelectorAll('.perf')].slice(1).map(r=>{const i=r.querySelectorAll('input');return{d:+i[0].value,t:pt(i[1].value),fc:+i[2].value||0}}).filter(p=>p.d>0&&p.t>0);
+ if(!(m>0&&age>0&&P.length)){out.innerHTML='<p class="warn">Please enter weight, age, and at least one performance (distance in meters, time in mm:ss).</p>';return}
+ 
+ const tan=208-.7*age,fcm=fm||tan,fr2=fr||55;
+ const V=P.map(p=>vdot(p.d,p.t)),vo=Math.max(...V),vma=vInv(vo),vmaL=vo/3.5;
+ 
+ let krVal=+$('kr').value;
+ const krAuto = Math.max(1.03, Math.min(1.12, 1.15 - 0.005 * vma));
+ const kr = krVal > 0 ? krVal : krAuto;
+
+ let vc=0,dp=0,r2=0,warn='';
+ if(P.length>=2){const r=reg(P.map(p=>p.t),P.map(p=>p.d));if(r)[vc,dp,r2]=r;if(vc<=0)warn='Critical Speed could not be computed: please check performance consistency.';if(P.some(p=>p.t<120||p.t>1500))warn+=' The Critical Speed model is valid for maximal efforts lasting between 2 and 25 min.'}
+ const vck=vc>0?vc*3.6:0;
+
+ let cpMet=0, cpMeca=0, wPrime=0, r2Cp=0;
+ if(P.length>=2){
+  const CrM = costMinetti(penteVal);
+  const E_met = P.map(p => CrM * m * p.d);
+  const rP = reg(P.map(p=>p.t), E_met);
+  if(rP && rP[0]>0){
+   cpMet = rP[0];
+   cpMeca = cpMet * 0.25;
+   wPrime = rP[1];
+   r2Cp = rP[2];
+  }
+ }
+
+ const fp=P.filter(p=>p.fc).map(p=>[p.d/p.t*3.6,p.fc]),fr0=fp.length>=2?reg(fp.map(a=>a[0]),fp.map(a=>a[1])):null,fr_=fr0&&fr0[0]>0?fr0:null;
+ if(fr0&&fr0[0]<=0)warn+=' HR/speed regression ignored: entered average HR values do not increase with speed. ';
+
+ const d6=+$('d6').value;
+ let lg=null;
+ if(P.length>=2){const r=reg(P.map(p=>Math.log(p.t)),P.map(p=>p.d/p.t));if(r&&r[0]<0){const tc=(+$('tc').value||6)*60,vm=r[1]+r[0]*Math.log(tc);lg={a:r[1],b:r[0],tc,vm,E:-r[0]/vm,r2:r[2]}}}
+ let h=warn?`<p class="warn">${warn}</p>`:'';
+ h+=`<h2>Athletic Profile Summary</h2><div class="k">
+ ${d6>0?`<div><b>${f(d6/100,1)} km/h</b><small>Half-Cooper: MAS = d6 / 100<br>VO2max = ${f(d6/100*3.5,1)} ml/kg/min</small></div>`:''}
+ ${lg?`<div><b>${f(lg.vm*3.6,1)} km/h</b><small>Log Model (CNRS/MIT): vVO2max at tc = ${f(lg.tc/60,1)} min<br>Endurance E = ${f(lg.E,3)}</small></div>`:''}
+ <div><b>${f(vma,1)} km/h</b><small>Daniels MAS, ${al(vma)}/km<br>Léger MAS: ${f(vmaL,1)} km/h</small></div>
+ <div><b>${vck?f(vck,1)+' km/h':'–'}</b><small>${vck?`Critical Speed, ${al(vck)}/km, ${f(100*vck/vma)} % MAS`:'Critical Speed: min 2 perfs.'}</small></div>
+ <div><b>${vck?f(dp)+' m':'–'}</b><small>${vck?`D' (anaerobic dist. reserve), R² = ${f(r2,3)}`:'D\''}</small></div>
+ <div><b>${f(vo,1)}</b><small>Effective VO2max (ml/kg/min), ${f(vo*m/1000,2)} L/min</small></div>
+ <div><b>${cpMeca?f(cpMeca)+' W':'–'}</b><small>${cpMeca?`Critical Power (mech), ${f(cpMeca/m,2)} W/kg<br>Metabolic CP: ${f(cpMet)} W`:'CP (Critical Power)'}</small></div>
+ <div><b>${wPrime?f(wPrime/1000,1)+' kJ':'–'}</b><small>${wPrime?`W' (anaerobic energy reserve), ${f(wPrime/m,0)} J/kg, R² = ${f(r2Cp,3)}`:'W\''}</small></div>
+ </div>
+ <p class="note">VDOT of performances: ${P.map((p,i)=>`${f(p.d)} m in ${ft(p.t)} → ${f(V[i],1)}`).join(' · ')}. Riegel k = ${f(kr,2)} ${krVal>0?'(fixed)':'(fitted to level)'}. Slope = ${f(penteVal*100,1)} %.</p>`;
+
+ const fx=[['Fox: 220 − age',220-age],['Tanaka: 208 − 0.7 × age',tan],['Gellish: 207 − 0.7 × age',207-.7*age],['Nes: 211 − 0.64 × age',211-.64*age]];
+ h+=`<h2>Maximal Heart Rate</h2>`+tb(['Formula','Max HR (bpm)'],fx.map(x=>({v:[x[0],f(x[1])]})))+'<p class="note">Individual standard deviation of ~10 bpm: a measured HRmax is preferable.</p>';
+
+ let S=[.65,.75,.85,.95,1].map(x=>vma*x);if(vck)S.push(vck);const vt=+$('vt').value;if(vt>0)S.push(vt);S=[...new Set(S.map(x=>+x.toFixed(1)))].sort((a,b)=>a-b);
+ const CrMinetti = costMinetti(penteVal);
+ h+=`<h2>VO2, HR, Power & Energy Cost by Speed</h2>`+tb(['v (km/h)','Pace','VO2','% VO2max','HR (Reserve)','HR (Swain 94)',fr_?'HR (Regression)':'','Metabolic P (W)','Mechanical P (W)','Cr (Minetti J/kg/m)','kcal/km'].filter(Boolean),
+ S.map(v=>{
+  const o=vo2(v),on=Math.max(o-3.5,0);
+  const pmMet = CrMinetti * m * (v/3.6);
+  const pmMeca = pmMet * 0.25;
+  return{v:[f(v,1),al(v)+'/km',f(o,1),f(100*o/vo)+' %',f(fr2+(fcm-fr2)*on/(vo-3.5)),f(fcm*(.64*100*o/vo+37)/100),...(fr_?[f(fr_[0]*v+fr_[1])]:[]),f(pmMet),f(pmMeca),f(CrMinetti,2),f(CrMinetti*m*1000/4184)]}
+ }))
+ +`<p class="note">${fr?'':'Rest HR not provided: assuming 55 bpm. '}Metabolic power based on Minetti et al. (2002).</p>`;
+
+ if(ri===null||ri>=P.length)ri=P.reduce((b,p,i)=>Math.abs(p.d-7000)<Math.abs(P[b].d-7000)?i:b,0);
+ const R=P[ri],dc=+$('dc').value*1000,Vr=V[ri];
+ const D=[['1500 m',1500],['3000 m',3000],['5 km',5000],['10 km',10000],['Half-Marathon',21097.5],['Marathon',42195]];if(dc>0)D.push([`${f(dc/1000,1)} km`,dc]);
+ h+=`<h2>Race Predictions</h2><label for="ref">Reference Performance</label><select id="ref" onchange="ri=+this.value;calc()">${P.map((p,i)=>`<option value="${i}"${i==ri?' selected':''}>${f(p.d)} m in ${ft(p.t)}</option>`).join('')}</select><div style="height:8px"></div>`
+ +tb(['Distance','Riegel (k=' + f(kr,2) + ')','Pace','Daniels (VDOT)','Pace',...(lg?['Log CNRS/MIT','Pace']:[]),'% CS (Riegel)'],D.map(([n,d])=>{const t1=R.t*(d/R.d)**kr,t2=tV(d,Vr),t3=lg?lgT(lg,d):NaN;return{v:[n,ft(t1),al(d/t1*3.6)+'/km',ft(t2),al(d/t2*3.6)+'/km',...(lg?[isFinite(t3)?ft(t3):'–',isFinite(t3)?al(d/t3*3.6)+'/km':'–']:[]),vck?f(100*d/t1*3.6/vck)+' %':'–']}}))
+ +'<p class="note">Riegel uses an exponent k automatically fitted to the runner\'s level.</p>';
+
+ const rg=v=>fr2+(fcm-fr2)*Math.max(vo2(v)-3.5,0)/(vo-3.5);
+ G={d0:800,d1:45000,fcm,M:[{n:'Riegel',c:'#0e7c86',t:d=>R.t*(d/R.d)**kr},{n:'Daniels (VDOT)',c:'#d98e04',t:d=>tV(d,Vr)}],
+  fcs:[rg,v=>fcm*(.64*100*vo2(v)/vo+37)/100,...(fr_?[v=>fr_[0]*v+fr_[1]]:[])]};
+ if(lg)G.M.push({n:'Log CNRS/MIT',c:'#c8433f',t:d=>lgT(lg,d)});
+ if(vck)G.M.push({n:'Critical Speed',c:'#7a5fc9',t:d=>d>dp?(d-dp)/vc:NaN,tmax:3000});
+ const so=['Heart Reserve (%HRR = %VO2R)','Swain 1994 (%HRmax)',...(fr_?['Regression from races']:[])];if(sm>=so.length)sm=0;
+ h+=`<h2>Interactive Chart HR ↔ Distance</h2><div class="tw" style="padding:12px"><p class="note" style="margin:0 0 8px">Drag the handle under the distance axis, or to the left of the HR axis. Distance: <b id="ld"></b> · HR: <b id="lf"></b></p>
+ <label style="margin-top:8px">Speed → HR Conversion</label><select class="cur" id="sm" oninput="gdraw()">${so.map((x,i)=>`<option value="${i}"${i==sm?' selected':''}>${x}</option>`).join('')}</select><div id="gc"></div></div>`;
+
+ const fz=[[0,'Z1 Recovery',.5,.6],[1,'Z2 Aerobic / Easy',.6,.7],[2,'Z3 Tempo / Steady',.7,.8],[3,'Z4 Threshold',.8,.9],[4,'Z5 VO2max / Intense',.9,1]];
+ const modelFCInfo = fr ? `Model: Karvonen · HRmax = ${f(fcm)} bpm, HRrest = ${f(fr)} bpm.` : `Model: Percentage of HRmax · HRmax = ${f(fcm)} bpm.`;
+ h+=`<h2>Heart Rate Training Zones</h2><p class="note" style="margin:-4px 0 8px">${modelFCInfo}</p>`+tb(['Zone','Intensity',fr?'HR (Karvonen)':'HR (% HRmax)'],fz.map(([i,n,a,b])=>{const g=x=>f(fr?fr+x*(fcm-fr):x*fcm);return{z:ZC[i],v:[n,`${f(a*100)}–${f(b*100)} %`,`${g(a)}–${g(b)} bpm`]}}));
+ const sp=(a,b,B)=>[`${f(a*B,1)}–${f(b*B,1)} km/h`,`${al(b*B)}–${al(a*B)}/km`];
+
+ if(vck){
+  const vz=[[0,'Z1 Recovery',0,.75],[1,'Z2 Aerobic endurance',.75,.88],[2,'Z3 Tempo / Marathon pace',.88,.95],[3,'Z4 Threshold (≈ CS / CP)',.95,1.03],[4,'Z5 Long intervals, MAS / >CP',1.03,1.15]];
+  const modelVCInfo = `Model: Critical Speed & Power · CS = ${f(vck,1)} km/h, D' = ${f(dp)} m · Mech CP = ${f(cpMeca)} W, W' = ${f(wPrime/1000,1)} kJ.`;
+  h+=`<h2>Pace & Power Zones (% Critical Speed & Power)</h2><p class="note" style="margin:-4px 0 8px">${modelVCInfo}</p>`
+  +tb(['Zone','% CS / % CP','Speed','Pace','Mechanical Power (W)','Metabolic Power (W)'],vz.map(([i,n,a,b])=>({
+   z:ZC[i],
+   v:[n,`${f(a*100)}–${f(b*100)} %`,a?sp(a,b,vck)[0]:`< ${f(b*vck,1)} km/h`,a?sp(a,b,vck)[1]:`> ${al(b*vck)}/km`,`${f(a*cpMeca)}–${f(b*cpMeca)} W`,`${f(a*cpMet)}–${f(b*cpMet)} W`]
+  })));
+ }
+
+ const mvma = $('mvma') ? $('mvma').value : 'cooper';
+ let vmaSel = vma;
+ let modelVMAInfo = '';
+ if (mvma === 'leger') {
+  vmaSel = vmaL;
+  modelVMAInfo = `Model: Léger MAS (VO2max / 3.5) · MAS = ${f(vmaL,1)} km/h.`;
+ } else if (mvma === 'cooper') {
+  const vmaC = d6 > 0 ? d6 / 100 : NaN;
+  vmaSel = isFinite(vmaC) && vmaC > 0 ? vmaC : vma;
+  modelVMAInfo = d6 > 0 ? `Model: Half-Cooper (6 min) · MAS = ${f(vmaC,1)} km/h.` : `Model: Half-Cooper (not provided → Daniels MAS).`;
+ } else {
+  vmaSel = vma;
+  modelVMAInfo = `Model: Daniels MAS (VDOT) · MAS = ${f(vma,1)} km/h.`;
+ }
+
+ const mz=[[0,'Easy / Aerobic Base',.6,.75],[1,'Active Endurance',.75,.85],[2,'Threshold / Half-marathon',.85,.9],[3,'Long MAP / MAS (30/30, 3-6 min)',.9,1],[4,'Short MAP / Supra-MAS',1,1.1]];
+ h+=`<h2>Pacing Zones (% MAS)</h2><p class="note" style="margin:-4px 0 8px">${modelVMAInfo}</p>`+tb(['Zone','% MAS','Speed','Pace'],mz.map(([i,n,a,b])=>({z:ZC[i],v:[n,`${f(a*100)}–${f(b*100)} %`,...sp(a,b,vmaSel)]})));
+
+ const vq=+$('vt').value;
+ if(vq>0||dc>0){
+  const fcv=v=>f(Math.min(fcm,fr2+(fcm-fr2)*Math.max(vo2(v)-3.5,0)/(vo-3.5)))+' bpm',fk=d=>f(d/1000,2)+' km';
+  h+=`<h2>Speed ↔ Distance Conversion</h2>`;
+  if(vq>0){
+   const vm=vq/3.6,v1=R.d/R.t*3.6,dR=R.d*Math.pow(vq/v1,1/(1-kr));
+   let dD;if(vdot(1e5,1e5/vm)<vo)dD='> 100 km';else if(vdot(800,800/vm)>=vo)dD='< 800 m';else{let a=800,b=1e5;for(let i=0;i<60;i++){const c=(a+b)/2;vdot(c,c/vm)<vo?a=c:b=c}dD=fk((a+b)/2)}
+   const rw=[['Riegel',fk(dR),ft(dR/vm)],['Daniels (VDOT)',dD,/^[<>]/.test(dD)?'–':ft(parseFloat(dD.replace(',','.'))*1000/vm)]];
+   if(lg){const T=Math.exp((vm-lg.a)/lg.b),dl=vm*T;rw.push(['Log (CNRS/MIT)',dl>1e5?'> 100 km':fk(dl),dl>1e5?'–':ft(T)])}
+   if(vck)rw.push(['Critical Speed (D\')',vq>vck?fk(vm*dp/(vm-vc)):'sustainable for a long time (≤ CS)',vq>vck?ft(dp/(vm-vc)):'–']);
+   if(cpMet>0){
+    const pMetReq = CrMinetti * m * vm;
+    rw.push(['Critical Power (W\')', pMetReq > cpMet ? fk(vm * wPrime / (pMetReq - cpMet)) : 'sustainable for a long time (≤ CP)', pMetReq > cpMet ? ft(wPrime / (pMetReq - cpMet)) : '–']);
+   }
+   h+=`<p class="note" style="margin:0 0 6px">At <b>${f(vq,1)} km/h</b>:</p>`+tb(['Model','Distance','Duration'],rw.map(x=>({v:x})));
+  }
+  if(dc>0){
+   const t1=R.t*(dc/R.d)**kr,t2=tV(dc,Vr),rw=[['Riegel',t1],['Daniels (VDOT)',t2]];
+   if(lg){const t=lgT(lg,dc);if(isFinite(t))rw.push(['Log (CNRS/MIT)',t])}
+   if(vck&&dc>dp)rw.push(['Critical Speed (D\')',(dc-dp)/vc]);
+   h+=`<p class="note" style="margin:14px 0 6px">Over <b>${f(dc/1000,2)} km</b>:</p>`+tb(['Model','Time','Speed','Pace','% MAS','% CS','Est. HR'],rw.map(([n,t])=>{const v=dc/t*3.6;return{v:[n,ft(t),f(v,2)+' km/h',al(v)+'/km',f(100*v/vma)+' %',vck?f(100*v/vck)+' %':'–',fcv(v)]}}));
+  }
+ }
+ out.innerHTML=h+FORM;gdraw();
+}
+
+function gdraw(){
+ const g=G;if(!g||!$('sm'))return;
+ sm=+$('sm').value;
+ const fc=g.fcs[sm]||g.fcs[0],lx=Math.log(g.d0),lw=Math.log(g.d1)-lx,W=720,H=350,ml=66,mr=14,mt=12,mb=50,pw=W-ml-mr,ph=H-mt-mb,tx=30,ty=H-mb+34;
+ const ok=(m,d)=>{const t=m.t(d);return isFinite(t)&&t>0&&(!m.tmax||t<=m.tmax)};
+ const pts=g.M.map(m=>{const a=[];for(let i=0;i<=80;i++){const d=Math.exp(lx+lw*i/80);if(ok(m,d)){const y=fc(d/m.t(d)*3.6);if(isFinite(y))a.push([d,y])}}return a});
+ const ys=pts.flat().map(q=>q[1]);if(!ys.length)return;
+ const ylo=Math.floor((Math.min(...ys)-3)/5)*5,yhi=Math.ceil((Math.min(Math.max(...ys),g.fcm+10)+3)/5)*5;
+ sd=Math.min(g.d1,Math.max(g.d0,sd));if(sf===null)sf=Math.round((ylo+yhi)/2);sf=Math.min(yhi,Math.max(ylo,sf));
+ g.L={W,H,ml,mt,pw,ph,lx,lw,ylo,yhi};
+ const X=d=>ml+(Math.log(d)-lx)/lw*pw,Y=y=>mt+(yhi-y)/(yhi-ylo)*ph,dc=sd,fcur=sf;
+ let v='';
+ for(let y=Math.ceil(ylo/10)*10;y<=yhi;y+=10)v+=`<line x1="${ml}" x2="${W-mr}" y1="${Y(y)}" y2="${Y(y)}" stroke="var(--bd)"/><text x="${ml-8}" y="${Y(y)+4}" text-anchor="end">${y}</text>`;
+ [[1000,'1 km'],[3000,'3 km'],[5000,'5 km'],[10000,'10 km'],[21097.5,'Half'],[42195,'Marathon']].forEach(([d,n])=>{v+=`<line x1="${X(d)}" x2="${X(d)}" y1="${mt}" y2="${H-mb}" stroke="var(--bd)"/><text x="${X(d)}" y="${H-mb+16}" text-anchor="middle">${n}</text>`});
+ v+=`<text x="10" y="${mt+ph/2}" transform="rotate(-90 10 ${mt+ph/2})" text-anchor="middle">HR (bpm)</text><text x="${ml-12}" y="${ty+4}" text-anchor="end">Distance</text>`;
+ v+=`<line x1="${ml}" x2="${W-mr}" y1="${ty}" y2="${ty}" stroke="var(--bd)" stroke-width="6" stroke-linecap="round"/><line x1="${tx}" x2="${tx}" y1="${mt}" y2="${H-mb}" stroke="var(--bd)" stroke-width="6" stroke-linecap="round"/>`;
+ if(g.fcm<=yhi&&g.fcm>=ylo)v+=`<line x1="${ml}" x2="${W-mr}" y1="${Y(g.fcm)}" y2="${Y(g.fcm)}" stroke="var(--am)" stroke-dasharray="2 4"/><text x="${W-mr-2}" y="${Y(g.fcm)-4}" text-anchor="end" style="fill:var(--am)">HRmax</text>`;
+ pts.forEach((a,i)=>{const q=a.filter(r=>r[1]<=yhi&&r[1]>=ylo);if(q.length>1)v+=`<polyline fill="none" stroke="${g.M[i].c}" stroke-width="2.5" points="${q.map(r=>X(r[0]).toFixed(1)+','+Y(r[1]).toFixed(1)).join(' ')}"/>`});
+ v+=`<line x1="${X(dc)}" x2="${X(dc)}" y1="${mt}" y2="${ty}" stroke="var(--tx)" stroke-width="1.5" stroke-dasharray="5 4"/><line x1="${tx}" x2="${W-mr}" y1="${Y(fcur)}" y2="${Y(fcur)}" stroke="var(--tx)" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+ g.M.forEach(m=>{if(ok(m,dc)){const y=fc(dc/m.t(dc)*3.6);if(y>=ylo&&y<=yhi)v+=`<circle cx="${X(dc)}" cy="${Y(y)}" r="5" fill="${m.c}" stroke="var(--card)" stroke-width="2"/>`}});
+ v+=`<rect data-k="d" x="${ml-10}" y="${ty-15}" width="${pw+20}" height="30" fill="transparent"/><rect data-k="f" x="${tx-15}" y="${mt-8}" width="30" height="${ph+16}" fill="transparent"/>
+ <rect class="kn" data-k="d" tabindex="0" role="slider" aria-label="Distance" aria-valuenow="${f(dc/1000,2)}" x="${X(dc)-10}" y="${ty-9}" width="20" height="18" rx="5" fill="var(--ac)" stroke="var(--card)" stroke-width="2"/>
+ <rect class="kn" data-k="f" tabindex="0" role="slider" aria-label="Heart Rate" aria-valuenow="${f(fcur)}" x="${tx-9}" y="${Y(fcur)-10}" width="18" height="20" rx="5" fill="var(--ac)" stroke="var(--card)" stroke-width="2"/>`;
+ const inv=m=>{const F=d=>ok(m,d)?fc(d/m.t(d)*3.6):NaN;let a=lx,b=lx+lw;if(!(F(g.d0)>=fcur&&F(g.d1)<=fcur))return NaN;for(let i=0;i<50;i++){const c=(a+b)/2;F(Math.exp(c))>fcur?a=c:b=c}return Math.exp((a+b)/2)};
+ $('ld').textContent=f(dc/1000,2)+' km';$('lf').textContent=f(fcur)+' bpm';
+ const t1=tb(['Model','Time','Speed','Pace','Expected HR'],g.M.map(m=>{if(!ok(m,dc))return{z:m.c,v:[m.n,'–','–','–','–']};const t=m.t(dc),w=dc/t*3.6;return{z:m.c,v:[m.n,ft(t),f(w,2)+' km/h',al(w)+'/km',f(fc(w))+' bpm']}}));
+ const t2=tb(['Model','Distance','Time','Pace'],g.M.map(m=>{const d=inv(m);if(!isFinite(d))return{z:m.c,v:[m.n,'–','–','–']};const t=m.t(d);return{z:m.c,v:[m.n,f(d/1000,2)+' km',ft(t),al(d/t*3.6)+'/km']}}));
+ $('gc').innerHTML=`<div class="lg" style="margin:10px 0 4px">${g.M.map(m=>`<span style="color:${m.c}">■ ${m.n}</span>`).join('')}</div><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;color:var(--mut)" role="group" aria-label="Expected HR">${v}</svg>
+ <p class="note" style="margin:6px 0">At distance <b>${f(dc/1000,2)} km</b>:</p>${t1}<p class="note" style="margin:10px 0 6px">Distance reached for an HR of <b>${f(fcur)} bpm</b>:</p>${t2}`;
+}
+
+function gset(e){
+ const svg=$('gc').querySelector('svg');if(!svg||!G||!G.L)return;
+ const r=svg.getBoundingClientRect(),L=G.L,x=(e.clientX-r.left)/r.width*L.W,y=(e.clientY-r.top)/r.height*L.H;
+ if(dragK==='d')sd=Math.exp(L.lx+L.lw*Math.min(1,Math.max(0,(x-L.ml)/L.pw)));
+ else sf=L.ylo+(L.yhi-L.ylo)*Math.min(1,Math.max(0,(L.mt+L.ph-y)/L.ph));
+ gdraw();
+}
+document.addEventListener('pointerdown',e=>{const k=e.target.dataset&&e.target.dataset.k;if(k&&e.target.closest('#gc')){dragK=k;e.preventDefault();gset(e)}});
+document.addEventListener('pointermove',e=>{if(dragK)gset(e)});
+['pointerup','pointercancel'].forEach(t=>document.addEventListener(t,()=>{dragK=null}));
+document.addEventListener('keydown',e=>{const k=e.target.dataset&&e.target.dataset.k,q={ArrowRight:1,ArrowUp:1,ArrowLeft:-1,ArrowDown:-1}[e.key];if(!k||!q||!G||!G.L)return;e.preventDefault();if(k==='d')sd*=Math.pow(1.02,q);else sf+=q;gdraw();const n=$('gc').querySelector(`.kn[data-k="${k}"]`);if(n)n.focus()});
+
+const FORM=`<h2>Formulas Used</h2>
+<details open><summary>Show equations for all models</summary><dl>
+<dt>Maximal Heart Rate (HRmax)</dt><dd><code>Fox: 220 − age</code> · <code>Tanaka: 208 − 0.7 × age</code> · <code>Gellish: 207 − 0.7 × age</code> · <code>Nes: 211 − 0.64 × age</code></dd>
+<dt>HR Zones (Karvonen)</dt><dd><code>HR = HRrest + p × (HRmax − HRrest)</code> with p = intensity %</dd>
+<dt>Running VO2 (ml/kg/min), v in m/min</dt><dd>Daniels: <code>VO2 = −4.60 + 0.182258·v + 0.000104·v²</code><br>ACSM (slope G): <code>VO2 = 0.2·v + 0.9·v·G + 3.5</code></dd>
+<dt>Effective VO2max (VDOT)</dt><dd><code>F(t) = 0.8 + 0.1894393·e^(−0.012778·t) + 0.2989558·e^(−0.1932605·t)</code>, t in minutes<br><code>VDOT = VO2(v) / F(t)</code>, with v = d / t</dd>
+<dt>Maximal Aerobic Speed (MAS / VMA)</dt><dd>Léger: <code>MAS (km/h) = VO2max / 3.5</code> · Daniels: speed where <code>VO2(v) = VDOT</code></dd>
+<dt>Field Tests</dt><dd>Cooper 12 min: <code>VO2max = (d12 − 504.9) / 44.73</code> · Half-Cooper 6 min: <code>MAS = d6 / 100</code>, then <code>VO2max = 3.5 × MAS</code> · Uth: <code>VO2max = 15.3 × HRmax / HRrest</code></dd>
+<dt>Critical Speed (CS / VC)</dt><dd><code>d = D' + CS × t</code> (regression: slope = CS in m/s, intercept = D' in m) · <code>t_lim = D' / (v − CS)</code></dd>
+<dt>Energy Cost & Slope (Minetti et al., 2002)</dt><dd><code>Cr(G) = 155.4·G⁵ − 30.4·G⁴ − 43.3·G³ + 46.3·G² + 19.5·G + 3.6</code> (J/kg/m), G = gradient in %/100<br><code>P_metabolic = Cr(G) × m × v</code> · <code>P_mechanical = 0.25 × P_metabolic</code> · <code>kcal/km = Cr(G) × m × 1000 / 4184</code></dd>
+<dt>Critical Power & W' (Monod & Scherrer)</dt><dd><code>Energy E(t) = W' + CP × t</code> (linear regression t in s, E_metabolic = Cr(G) × m × d in Joules)<br><code>CP</code> = slope (metabolic/mechanical Watts) · <code>W'</code> = y-intercept (anaerobic reserve in Joules)</dd>
+<dt>Heart Rate vs Speed</dt><dd>Reserve (Swain & Leutholtz): <code>HR = HRrest + (HRmax − HRrest) × (VO2(v) − 3.5) / (VO2max − 3.5)</code><br>Swain 1994: <code>%HRmax = 0.64 × %VO2max + 37</code><br>Regression: <code>HR = a·v + b</code></dd>
+<dt>Logarithmic Model (CNRS/MIT)</dt><dd><code>v(T) = a + b × ln(T)</code> (with b &lt; 0)<br><code>vVO2max = v(tc) = a + b × ln(tc)</code> · endurance <code>E = −b / vVO2max</code> · so <code>v(T) = vVO2max × (1 − E × ln(T / tc))</code><br>Distance for speed v: <code>T = exp((v − a) / b)</code>, <code>d = v × T</code> · time for distance d: solve <code>(a + b × ln T) × T = d</code>.</dd>
+<dt>Predictions & Adjusted Riegel (Cameron 1999)</dt><dd>Riegel: <code>T2 = T1 × (D2 / D1)^k</code> with k fitted to level: <code>k = max(1.03, min(1.12, 1.15 − 0.005 × MAS))</code> · Daniels: equivalent VDOT</dd>
+</dl>
+<p class="note">Sources: Tanaka et al. 2001; Fox et al. 1971; Gellish et al. 2007; Nes et al. 2013; Karvonen et al. 1957; Daniels & Gilbert 1979; ACSM; Léger & Boucher 1980; Léger & Mercier 1984; Cooper 1968; Uth et al. 2004; Monod & Scherrer 1965; Hill 1993; Skiba et al. 2012; Mulligan, Adam & Emig 2018 (PLoS ONE 13:e0206645); Swain et al. 1994; Swain & Leutholtz 1997; Margaria et al. 1963; Minetti et al. 2002; di Prampero 1986; Cameron 1999; Riegel 1981.</p></details>`;
+
+document.addEventListener('input',e=>{if(!e.target.classList.contains('cur'))calc()});
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='mvma')calc()});
+calc();
+</script>
+</body>
+</html>
